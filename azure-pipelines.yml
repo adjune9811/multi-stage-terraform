@@ -11,13 +11,20 @@ stages:
         pool:
           vmImage: 'ubuntu-latest'
         steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: '1.7.5'
+
           - task: AzureCLI@2
+            displayName: "Terraform Init"
             inputs:
               azureSubscription: 'idaug25'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
-                cd infra
                 terraform init
 
   - stage: TerraformPlan
@@ -28,17 +35,23 @@ stages:
         pool:
           vmImage: 'ubuntu-latest'
         steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: '1.7.5'
+
           - task: AzureCLI@2
+            displayName: "Terraform Plan"
             inputs:
               azureSubscription: 'idaug25'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
-                cd infra
                 terraform validate
                 terraform plan -out=tfplan
 
-          - publish: $(System.DefaultWorkingDirectory)/infra/tfplan
+          - publish: $(System.DefaultWorkingDirectory)/tfplan
             artifact: terraformPlan
 
   - stage: TerraformApply
@@ -54,14 +67,20 @@ stages:
           runOnce:
             deploy:
               steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  inputs:
+                    terraformVersion: '1.7.5'
+
                 - download: current
                   artifact: terraformPlan
 
                 - task: AzureCLI@2
+                  displayName: "Terraform Apply"
                   inputs:
                     azureSubscription: 'idaug25'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
-                      cd infra
                       terraform apply -auto-approve tfplan
