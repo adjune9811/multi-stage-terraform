@@ -5,26 +5,61 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-# Install Terraform (always latest version)
+# -----------------------------
+# Install Terraform
+# -----------------------------
 - task: TerraformInstaller@1
   displayName: 'Install Terraform'
   inputs:
     terraformVersion: 'latest'
 
-# Terraform Init (Backend config stored in Azure Storage Account)
+# -----------------------------
+# Ensure Storage Account Exists (Backend Infra)
+# -----------------------------
+- task: AzureCLI@2
+  displayName: 'Ensure Storage Account for Terraform Backend'
+  inputs:
+    azureSubscription: 'idaug25'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      RG_NAME="RG-Storage"
+      LOCATION="centralindia"
+      STORAGE_ACCOUNT="newaddsstorage"
+      CONTAINER_NAME="tf-container"
+
+      echo "Checking Resource Group..."
+      az group show -n $RG_NAME || az group create -n $RG_NAME -l $LOCATION
+
+      echo "Checking Storage Account..."
+      az storage account show -n $STORAGE_ACCOUNT -g $RG_NAME || \
+      az storage account create -n $STORAGE_ACCOUNT -g $RG_NAME -l $LOCATION --sku Standard_LRS
+
+      echo "Getting Storage Account Key..."
+      ACCOUNT_KEY=$(az storage account keys list -g $RG_NAME -n $STORAGE_ACCOUNT --query "[0].value" -o tsv)
+
+      echo "Checking Blob Container..."
+      az storage container show -n $CONTAINER_NAME --account-name $STORAGE_ACCOUNT --account-key $ACCOUNT_KEY || \
+      az storage container create -n $CONTAINER_NAME --account-name $STORAGE_ACCOUNT --account-key $ACCOUNT_KEY
+
+# -----------------------------
+# Terraform Init
+# -----------------------------
 - task: TerraformTaskV4@4
   displayName: 'Terraform Init'
   inputs:
     provider: 'azurerm'
     command: 'init'
-    backendServiceArm: 'idaug25'   # your Service Connection
-    backendAzureRmResourceGroupName: 'terraform-storage-rg'
-    backendAzureRmStorageAccountName: 'addsterraformstate201'
-    backendAzureRmContainerName: 'tfstatefiles'
-    backendAzureRmKey: 'onlyrgterraform.tfstate'
+    backendServiceArm: 'idaug25'
+    backendAzureRmResourceGroupName: 'RG-Storage'
+    backendAzureRmStorageAccountName: 'newaddsstorage'
+    backendAzureRmContainerName: 'tf-container'
+    backendAzureRmKey: 'multi-stage.tfstate'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
 
+# -----------------------------
 # Terraform Plan
+# -----------------------------
 - task: TerraformTaskV4@4
   displayName: 'Terraform Plan'
   inputs:
@@ -33,7 +68,9 @@ steps:
     environmentServiceNameAzureRM: 'idaug25'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
 
+# -----------------------------
 # Terraform Apply
+# -----------------------------
 - task: TerraformTaskV4@4
   displayName: 'Terraform Apply'
   inputs:
