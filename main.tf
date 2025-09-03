@@ -13,7 +13,17 @@ provider "azurerm" {
   }
 }
 
+# Resource Group named by environment
 resource "azurerm_resource_group" "rg" {
-  name     = "devops-tf-rg"
-  location = "Central India"
+  name     = "rg-${var.env}"
+  location = var.location
+}
+
+# Example Storage Account named by environment
+resource "azurerm_storage_account" "storage" {
+  name                     = "st${var.env}demo123"  # must be globally unique
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
 }

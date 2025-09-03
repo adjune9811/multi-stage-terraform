@@ -4,78 +4,132 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
-steps:
+stages:
 # -----------------------------
-# Install Terraform
+# Stage 1: DEV
 # -----------------------------
-- task: TerraformInstaller@1
-  displayName: 'Install Terraform'
-  inputs:
-    terraformVersion: 'latest'
+- stage: Dev
+  displayName: "Terraform Deploy - DEV"
+  jobs:
+    - job: dev
+      steps:
+        - task: TerraformInstaller@1
+          displayName: 'Install Terraform'
+          inputs:
+            terraformVersion: 'latest'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Init (Dev)'
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'idaug25'
+            backendAzureRmResourceGroupName: 'RG-Storage'
+            backendAzureRmStorageAccountName: 'newaddsstorage'
+            backendAzureRmContainerName: 'tf-container'
+            backendAzureRmKey: 'dev.tfstate'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Plan (Dev)'
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: 'idaug25'
+            commandOptions: '-var env=dev -var location=centralindia'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Apply (Dev)'
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            commandOptions: '--auto-approve -var env=dev -var location=centralindia'
+            environmentServiceNameAzureRM: 'idaug25'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
 
 # -----------------------------
-# Ensure Storage Account Exists (Backend Infra)
+# Stage 2: QA
 # -----------------------------
-- task: AzureCLI@2
-  displayName: 'Ensure Storage Account for Terraform Backend'
-  inputs:
-    azureSubscription: 'idaug25'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      RG_NAME="RG-Storage"
-      LOCATION="centralindia"
-      STORAGE_ACCOUNT="newaddsstorage"
-      CONTAINER_NAME="tf-container"
+- stage: QA
+  displayName: "Terraform Deploy - QA"
+  dependsOn: Dev
+  jobs:
+    - job: qa
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: 'latest'
 
-      echo "Checking Resource Group..."
-      az group show -n $RG_NAME || az group create -n $RG_NAME -l $LOCATION
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Init (QA)'
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'idaug25'
+            backendAzureRmResourceGroupName: 'RG-Storage'
+            backendAzureRmStorageAccountName: 'newaddsstorage'
+            backendAzureRmContainerName: 'tf-container'
+            backendAzureRmKey: 'qa.tfstate'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
 
-      echo "Checking Storage Account..."
-      az storage account show -n $STORAGE_ACCOUNT -g $RG_NAME || \
-      az storage account create -n $STORAGE_ACCOUNT -g $RG_NAME -l $LOCATION --sku Standard_LRS
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Plan (QA)'
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: 'idaug25'
+            commandOptions: '-var env=qa -var location=centralindia'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
 
-      echo "Getting Storage Account Key..."
-      ACCOUNT_KEY=$(az storage account keys list -g $RG_NAME -n $STORAGE_ACCOUNT --query "[0].value" -o tsv)
-
-      echo "Checking Blob Container..."
-      az storage container show -n $CONTAINER_NAME --account-name $STORAGE_ACCOUNT --account-key $ACCOUNT_KEY || \
-      az storage container create -n $CONTAINER_NAME --account-name $STORAGE_ACCOUNT --account-key $ACCOUNT_KEY
-
-# -----------------------------
-# Terraform Init
-# -----------------------------
-- task: TerraformTaskV4@4
-  displayName: 'Terraform Init'
-  inputs:
-    provider: 'azurerm'
-    command: 'init'
-    backendServiceArm: 'idaug25'
-    backendAzureRmResourceGroupName: 'RG-Storage'
-    backendAzureRmStorageAccountName: 'newaddsstorage'
-    backendAzureRmContainerName: 'tf-container'
-    backendAzureRmKey: 'multi-stage.tfstate'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-
-# -----------------------------
-# Terraform Plan
-# -----------------------------
-- task: TerraformTaskV4@4
-  displayName: 'Terraform Plan'
-  inputs:
-    provider: 'azurerm'
-    command: 'plan'
-    environmentServiceNameAzureRM: 'idaug25'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Apply (QA)'
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            commandOptions: '--auto-approve -var env=qa -var location=centralindia'
+            environmentServiceNameAzureRM: 'idaug25'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
 
 # -----------------------------
-# Terraform Apply
+# Stage 3: PROD
 # -----------------------------
-- task: TerraformTaskV4@4
-  displayName: 'Terraform Apply'
-  inputs:
-    provider: 'azurerm'
-    command: 'apply'
-    commandOptions: '--auto-approve'
-    environmentServiceNameAzureRM: 'idaug25'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
+- stage: Prod
+  displayName: "Terraform Deploy - PROD"
+  dependsOn: QA
+  jobs:
+    - job: prod
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: 'latest'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Init (Prod)'
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'idaug25'
+            backendAzureRmResourceGroupName: 'RG-Storage'
+            backendAzureRmStorageAccountName: 'newaddsstorage'
+            backendAzureRmContainerName: 'tf-container'
+            backendAzureRmKey: 'prod.tfstate'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Plan (Prod)'
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: 'idaug25'
+            commandOptions: '-var env=prod -var location=centralindia'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform Apply (Prod)'
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            commandOptions: '--auto-approve -var env=prod -var location=centralindia'
+            environmentServiceNameAzureRM: 'idaug25'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
