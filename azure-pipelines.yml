@@ -21,9 +21,10 @@ stages:
           - task: AzureCLI@2
             displayName: "Terraform Init"
             inputs:
-              azureSubscription: 'idaug25'
+              azureSubscription: 'idaug25'   # Your Service Connection Name
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
               inlineScript: |
                 terraform init
 
@@ -38,6 +39,7 @@ stages:
           - checkout: self
 
           - task: TerraformInstaller@1
+            displayName: "Install Terraform"
             inputs:
               terraformVersion: '1.7.5'
 
@@ -47,6 +49,7 @@ stages:
               azureSubscription: 'idaug25'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
               inlineScript: |
                 terraform validate
                 terraform plan -out=tfplan
@@ -59,28 +62,26 @@ stages:
     dependsOn: TerraformPlan
     condition: succeeded()
     jobs:
-      - deployment: applyInfra
-        environment: dev
+      - job: apply
         pool:
           vmImage: 'ubuntu-latest'
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+        steps:
+          - checkout: self
 
-                - task: TerraformInstaller@1
-                  inputs:
-                    terraformVersion: '1.7.5'
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: '1.7.5'
 
-                - download: current
-                  artifact: terraformPlan
+          - download: current
+            artifact: terraformPlan
 
-                - task: AzureCLI@2
-                  displayName: "Terraform Apply"
-                  inputs:
-                    azureSubscription: 'idaug25'
-                    scriptType: 'bash'
-                    scriptLocation: 'inlineScript'
-                    inlineScript: |
-                      terraform apply -auto-approve tfplan
+          - task: AzureCLI@2
+            displayName: "Terraform Apply"
+            inputs:
+              azureSubscription: 'idaug25'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                terraform apply -auto-approve tfplan
